@@ -1,0 +1,117 @@
+# Variantcalling-GATK
+#/bash
+# Script to call germline variants in a human WGS paired-end reads 2 X 100bp
+# download data
+wget ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/phase3/data/HG00096/sequence_read/SRR062634_1.filt.fastq.gz
+wget ftp://ftp-trace.ncbi.nih.gov/1000genomes/ftp/phase3/data/HG00096/sequence_read/SRR062634_2.filt.fastq.g
+
+# download reference files
+wget /workspace/Variantcalling-GATK/ref_genome/hg38/ https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+gunzip hg38.fa.gz
+
+# index ref - .fai file before running haplotype caller
+samtools faidx /workspace/Variantcalling-GATK/ref_genome/hg38/hg38.fa
+
+# download known sites files for BQSR from GATK resource bundle
+wget /workspace/Variantcalling-GATK/ref_genome/hg38/ https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.dbsnp138.vcf
+wget /workspace/Variantcalling-GATK/ref_genome/hg38/ https://storage.googleapis.com/genomics-public-data/resources/broad/hg38/v0/Homo_sapiens_assembly38.dbsnp138.vcf.idx
+
+# Run FastQC
+./FastQC/fastqc reads/SRR062634_1.filt.fastq.gz reads/SRR062634_2.filt.fastq.gz
+
+# Aligning reads
+./bwa mem -t 4 -R "@RG\tID:SRR062634\tPL:ILLUMINA\tSM:SRR062634" \
+/workspace/Variantcalling-GATK/ref_genome/hg38.fa \
+/workspace/Variantcalling-GATK/reads/SRR062634_1.filt.fastq.gz \
+/workspace/Variantcalling-GATK/reads/SRR062634_2.filt.fastq.gz \
+> /workspace/Variantcalling-GATK/aligned_reads/SRR062634.paired.sam
+
+# Convert SAM to sorted BAM
+samtools view -Sb SRR062634.paired.sam | samtools sort -o SRR062634.paired.bam
+
+# Mark duplicates and Sort - GATK4
+gatk MarkDuplicatesSpark -I /workspace/Variantcalling-GATK/aligned_reads/SRR062634.paired.sam -O /workspace/Variantcalling-GATK/aligned_reads/SRR062634_sorted_dedup_reads.bam
+
+# Base quality recalibration (BQSR)
+# 1. Build the model
+gatk BaseRecalibrator -I /workspace/Variantcalling-GATK/aligned_reads/SRR062634_sorted_dedup_reads.bam -R /workspace/Variantcalling-GATK/ref_genome --known-sites /workspace/Variantcalling-GATK/ref_genome/Homo_sapiens_assembly38.dbsnp138.vcf -O /workspace/Variantcalling-GATK/data/recal_data.table
+# 2. Apply the model to adjust the base quality scores
+gatk ApplyBQSR -I /workspace/Variantcalling-GATK/aligned_reads/SRR062634_sorted_dedup_reads.bam -R /workspace/Variantcalling-GATK/ref_genome --bqsr-recal-file /workspace/Variantcalling-GATK/data/recal_data.table -O /workspace/Variantcalling-GATK/aligned_reads/SRR062634_sorted_dedup_bqsr_reads.bam 
+
+# Call Variants - gatk haplotype caller
+gatk HaplotypeCaller -R /workspace/Variantcalling-GATK/ref_genome -I /workspace/Variantcalling-GATK/aligned_reads/SRR062634_sorted_dedup_bqsr_reads.bam -O /workspace/Variantcalling-GATK/results/raw_variants.vcf
+
+# extract SNPs & INDELS
+gatk SelectVariants -R /workspace/Variantcalling-GATK/ref_genome -V ${results}/raw_variants.vcf --select-type SNP -O /workspace/Variantcalling-GATK/results/raw_snps.vcf
+gatk SelectVariants -R /workspace/Variantcalling-GATK/ref_genome -V ${results}/raw_variants.vcf --select-type INDEL -O /workspace/Variantcalling-GATK/results/raw_indels.vcf
+
+if false
+then
+# Filter Variants - GATK4
+# Filter SNPs
+gatk VariantFiltration \
+	-R /workspace/Variantcalling-GATK/ref_genome \
+	-V /workspace/Variantcalling-GATK/results/raw_snps.vcf \
+	-O /workspace/Variantcalling-GATK/results/filtered_snps.vcf \
+	-filter-name "QD_filter" -filter "QD < 2.0" \
+	-filter-name "FS_filter" -filter "FS > 60.0" \
+	-filter-name "MQ_filter" -filter "MQ < 40.0" \
+	-filter-name "SOR_filter" -filter "SOR > 4.0" \
+	-filter-name "MQRankSum_filter" -filter "MQRankSum < -12.5" \
+	-filter-name "ReadPosRankSum_filter" -filter "ReadPosRankSum < -8.0" \
+	-genotype-filter-expression "DP < 10" \
+	-genotype-filter-name "DP_filter" \
+	-genotype-filter-expression "GQ < 10" \
+	-genotype-filter-name "GQ_filter"
+
+# Filter INDELS
+gatk VariantFiltration \
+	-R /workspace/Variantcalling-GATK/ref_genome/ \
+	-V /workspace/Variantcalling-GATK/results/results/raw_indels.vcf \
+	-O /workspace/Variantcalling-GATK/results/filtered_indels.vcf \
+	-filter-name "QD_filter" -filter "QD < 2.0" \
+	-filter-name "FS_filter" -filter "FS > 200.0" \
+	-filter-name "SOR_filter" -filter "SOR > 10.0" \
+	-genotype-filter-expression "DP < 10" \
+	-genotype-filter-name "DP_filter" \
+	-genotype-filter-expression "GQ < 10" \
+	-genotype-filter-name "GQ_filter"
+
+# Select Variants that PASS filters
+gatk SelectVariants \
+	--exclude-filtered \
+	-V /workspace/Variantcalling-GATK/results/filtered_snps.vcf \
+	-O /workspace/Variantcalling-GATK/results/analysis-ready-snps.vcf
+
+# gatk SelectVariants \
+	--exclude-filtered \
+	-V /workspace/Variantcalling-GATK/results/filtered_indels.vcf \
+	-O /workspace/Variantcalling-GATK/results/analysis-ready-indels.vcf
+
+# to exclude variants that failed genotype filters
+cat analysis-ready-snps.vcf|grep -v -E "DP_filter|GQ_filter" > analysis-ready-snps-filteredGT.vcf
+cat analysis-ready-indels.vcf| grep -v -E "DP_filter|GQ_filter" > analysis-ready-indels-filteredGT.vcf
+
+# Annotate Variants - GATK4 Funcotator
+gatk Funcotator \
+	--variant /workspace/Variantcalling-GATK/results/analysis-ready-snps-filteredGT.vcf \
+	--reference /workspace/Variantcalling-GATK/ref_genome \
+	--ref-version hg38 \
+	--data-sources-path /Users/kr/Desktop/demo/tools/functotator_prepackaged_sources/funcotator/hg38/funcotator_dataSources.v1.7.20200521g \
+	--output /workspace/Variantcalling-GATK/results/analysis-ready-snps-filteredGT-functotated.vcf \
+	--output-file-format VCF
+
+gatk Funcotator \
+	--variant /workspace/Variantcalling-GATK/results/analysis-ready-indels-filteredGT.vcf \
+	--reference /workspace/Variantcalling-GATK/ref_genome \
+	--ref-version hg38 \
+	--data-sources-path /Users/kr/Desktop/demo/tools/functotator_prepackaged_sources/funcotator/hg38/funcotator_dataSources.v1.7.20200521g \
+	--output /workspace/Variantcalling-GATK/results/analysis-ready-indels-filteredGT-functotated.vcf \
+	--output-file-format VCF
+
+fi
+# Extract fields from a VCF file to a tab-delimited table
+gatk VariantsToTable \
+-V /workspace/Variantcalling-GATK/results/analysis-ready-snps-filteredGT-functotated.vcf -F AC -F AN -F DP -F AF -F FUNCOTATION \
+-O /workspace/Variantcalling-GATK/results/output_snps.table
+
