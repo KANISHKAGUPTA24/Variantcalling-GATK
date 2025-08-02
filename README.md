@@ -43,6 +43,5 @@ Annotates variants for downstream interpretation\
 
 📁 Output\
 Filtered and annotated VCF file\
-Variant statistics and summary metrics\
 Intermediate BAM and recalibrated BAM files\
 
