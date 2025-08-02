@@ -1,13 +1,13 @@
 # NGS Variant Calling Pipeline using GATK
-📌Overview\
+#Overview\
 This project implements a complete germline variant calling pipeline based on the GATK  workflow for analyzing whole-genome sequencing (WGS) data. The goal is to identify high-quality single nucleotide polymorphisms (SNPs) and indels in human DNA sequences.\
 
-🗂️ Dataset\
+#Dataset\
 Source: 1000 Genomes Project – Phase 3\
 Data format: Paired-end FASTQ files\
 Sample reference genome: Human GRCh38/hg38\
 
-🧪 Pipeline Steps\
+#Pipeline Steps\
 1. Quality Control\
 Tool: FastQC\
 Purpose: Assess the quality of raw FASTQ files\
@@ -41,7 +41,7 @@ Applies quality thresholds to SNPs and indels\
 Tool: VCFtools and online tools such as Ensembl VEP\
 Annotates variants for downstream interpretation\
 
-📁 Output\
+#Output\
 Filtered and annotated VCF file\
 Intermediate BAM and recalibrated BAM files\
 
