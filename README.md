@@ -11,32 +11,25 @@ Sample reference genome: Human GRCh38/hg38\
 1. Quality Control\
 Tool: FastQC\
 Purpose: Assess the quality of raw FASTQ files\
-
 2. Read Alignment\
 Tool: BWA-MEM\
 Aligns raw reads to the human reference genome\
 Output: SAM file\
-
 3. File Conversion & Sorting\
 Tool: Samtools\
 Converts SAM → BAM, sorts and indexes BAM files\
-
 4. Mark Duplicates\
 Tool: GATK MarkDuplicates\
 Removes PCR duplicates to prevent false positives\
-
 5. Base Quality Score Recalibration (BQSR)\
 Tools: GATK BaseRecalibrator and ApplyBQSR\
 Adjusts base quality scores to reduce technical bias\
-
 6. Variant Calling\
 Tool: GATK HaplotypeCaller\
 Generates GVCF file with potential variants\
-
 7. Variant Filtration\
 Tool: GATK VariantFiltration\
 Applies quality thresholds to SNPs and indels\
-
 8. Variant Annotation\
 Tool: VCFtools and online tools such as Ensembl VEP\
 Annotates variants for downstream interpretation\
